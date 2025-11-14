@@ -20,7 +20,7 @@ const topupSchema = new mongoose.Schema({
     default: 'pending'
   },
   last_six_digit: {
-    type: Number,
+    type: String,
     required: true
   },
   screenshot_url: {
