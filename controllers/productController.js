@@ -115,6 +115,7 @@ exports.deleteProduct = async (req, res) => {
 exports.syncProducts = async (req, res) => {
     try {
         const SystemConfig = require('../models/SystemConfig');
+        const { assignProductImages } = require('../utils/productImageMapper');
         
         let config = {
             method: 'get',
@@ -148,9 +149,10 @@ exports.syncProducts = async (req, res) => {
 
         const productsData = response.data;
         let syncedCount = 0;
+        
         for (const productData of productsData) {
             if (targetGames.includes(productData.key)) {
-                // Convert prices to MMK with 10% markup
+                // Convert prices to MMK with markup
                 const items = productData.items.map(item => ({
                     name: item.name,
                     sku: item.sku,
@@ -158,27 +160,34 @@ exports.syncProducts = async (req, res) => {
                     price_mmk: Math.round(parseFloat(item.price) * exchangeRate * markupRate)
                 }));
                
+                // Assign images to game and items
+                console.log(`Processing images for ${productData.key}...`);
+                const imageResults = await assignProductImages(productData.key, items);
+                
                 await Product.findOneAndUpdate(
                     { key: productData.key },
                     {
                         game: productData.name,
                         key: productData.key,
-                        items,
-                        // inputs,
+                        image: imageResults.gameImage,
+                        items: imageResults.items,
                         status: 'active'
                     },
                     { upsert: true, new: true }
                 );
 
                 syncedCount++;
+                console.log(`✓ Synced ${productData.key} with images`);
             }
         }
 
         res.json({ 
-          message: `Successfully synced ${syncedCount} products`,
-          games: targetGames 
+          message: `Successfully synced ${syncedCount} products with images`,
+          games: targetGames,
+          syncedCount 
         });
     } catch (error) {
+        console.error('Sync error:', error);
         res.status(500).json({ message: error.message });
     }
 };

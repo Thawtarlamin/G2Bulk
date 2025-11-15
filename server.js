@@ -28,19 +28,33 @@ connectDB();
 // Auto sync products every day at 3 AM
 cron.schedule('0 3 * * *', async () => {
   try {
-    console.log('Running daily product sync...');
+    console.log('Running daily product sync with images...');
     const Product = require('./models/Product');
+    const SystemConfig = require('./models/SystemConfig');
+    const { assignProductImages } = require('./utils/productImageMapper');
     
     const response = await axios.get('https://x.24payseller.com/products/list');
-    const exchangeRate = 125.79;
-    const markupRate = 1.10;
+    
+    // Get exchange rate and markup from database
+    const exchangeRateConfig = await SystemConfig.findOne({ key: 'exchange_rate' });
+    const markupRateConfig = await SystemConfig.findOne({ key: 'markup_rate' });
+    
+    const exchangeRate = exchangeRateConfig?.value || 125.79;
+    const markupRate = markupRateConfig?.value || 1.10;
     
     const targetGames = [
       'mobile-legends-global',
+      'mobile-legends-indonesia',
+      'mobile-legends-malaysia',
+      'mlbb-php-flashsale',
+      'mobile-legends-singapore',
       'honor-of-kings-global',
       'magicchess-go-go',
       'pubg-mobile-global',
-      'free-fire-v1'
+      'free-fire-i',
+      'free-fire-v1',
+      'free-fire-sg',
+      'free-fire-my'
     ];
     
     const productsData = response.data;
@@ -55,36 +69,28 @@ cron.schedule('0 3 * * *', async () => {
           price_mmk: Math.round(parseFloat(item.price) * exchangeRate * markupRate)
         }));
 
-        let inputs = [];
-        if (productData.inputs) {
-          if (Array.isArray(productData.inputs)) {
-            inputs = productData.inputs;
-          } else if (typeof productData.inputs === 'string') {
-            try {
-              inputs = JSON.parse(productData.inputs);
-            } catch (e) {
-              inputs = [];
-            }
-          }
-        }
+        // Assign images to game and items (will use cached images if already downloaded)
+        console.log(`Processing images for ${productData.key}...`);
+        const imageResults = await assignProductImages(productData.key, items);
 
         await Product.findOneAndUpdate(
           { key: productData.key },
           {
             game: productData.name,
             key: productData.key,
-            items,
-            inputs,
+            image: imageResults.gameImage,
+            items: imageResults.items,
             status: 'active'
           },
           { upsert: true, new: true }
         );
         
         syncedCount++;
+        console.log(`✓ Synced ${productData.key} with images`);
       }
     }
     
-    console.log(`Daily sync completed: ${syncedCount} products updated`);
+    console.log(`Daily sync completed: ${syncedCount} products updated with images`);
   } catch (error) {
     console.error('Daily product sync failed:', error.message);
   }
