@@ -259,11 +259,16 @@ exports.checkOrderStatus = async (req, res) => {
       }
     );
 
+    console.log('24payseller status check:', statusResponse.data);
+
     // Update local order status if different
-    const externalStatus = statusResponse.data.status;
+    const externalOrder = statusResponse.data.order || statusResponse.data;
+    const externalStatus = externalOrder.state || externalOrder.status;
+    
     if (externalStatus && order.status !== externalStatus) {
       order.status = externalStatus;
       await order.save();
+      console.log(`Order ${order._id} status updated from ${order.status} to ${externalStatus}`);
     }
 
     const populatedOrder = await Order.findById(order._id).populate('user', 'name email');
@@ -287,20 +292,25 @@ exports.checkOrderStatus = async (req, res) => {
 // @route   POST /api/orders/callback
 exports.orderCallback = async (req, res) => {
   try {
-    const { transactionId, status, message } = req.body;
+    console.log('Webhook callback received:', req.body);
+    
+    const { transactionId, state, status, message } = req.body;
+    const orderStatus = state || status;
 
     // Find order by external_id
     const order = await Order.findOne({ external_id: transactionId });
     
     if (!order) {
+      console.log(`Order not found for transactionId: ${transactionId}`);
       return res.status(404).json({ message: 'Order not found' });
     }
 
     // Update order status
-    order.status = status || order.status;
+    const oldStatus = order.status;
+    order.status = orderStatus || order.status;
     await order.save();
 
-    console.log(`Order ${order._id} updated via webhook. Status: ${status}`);
+    console.log(`Order ${order._id} updated via webhook. Status: ${oldStatus} -> ${orderStatus}`);
 
     res.json({ 
       success: true,
