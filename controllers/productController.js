@@ -98,13 +98,15 @@ exports.syncProducts = async (req, res) => {
         
         for (const productData of productsData) {
             if (targetGames.includes(productData.key)) {
-                // Convert prices to MMK with markup
-                const items = productData.items.map(item => ({
-                    name: item.name,
-                    sku: item.sku,
-                    original_price_thb: parseFloat(item.price),
-                    price_mmk: Math.round(parseFloat(item.price) * exchangeRate * markupRate)
-                }));
+                // Convert prices to MMK with markup, excluding "First Top Up" items
+                const items = productData.items
+                    .filter(item => !item.name.toLowerCase().includes('first top up'))
+                    .map(item => ({
+                        name: item.name,
+                        sku: item.sku,
+                        original_price_thb: parseFloat(item.price),
+                        price_mmk: Math.round(parseFloat(item.price) * exchangeRate * markupRate)
+                    }));
                
                 // Assign images to game and items
                 console.log(`Processing images for ${productData.key}...`);
