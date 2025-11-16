@@ -90,18 +90,16 @@ exports.createOrder = async (req, res) => {
       product_key,
       item_sku,
       input,
-      webhookURL: WEBHOOK_URL,
       apiKey: PAYSELLER_API_KEY ? 'Present' : 'Missing'
     });
 
-    // Create order in 24payseller
+    // Create order in 24payseller (no webhook needed - they return response directly)
     const paysellerResponse = await axios.post(
       `${PAYSELLER_BASE_URL}/agent/orders/create`,
       {
         product_key,
         item_sku,
-        input,
-        webhookURL: WEBHOOK_URL
+        input
       },
       {
         headers: {
@@ -113,7 +111,7 @@ exports.createOrder = async (req, res) => {
     
     console.log('24payseller response:', paysellerResponse.data);
     
-    const { transactionId } = paysellerResponse.data;
+    const { order: paysellerOrder } = paysellerResponse.data;
 
     // Save order to database
     const order = await Order.create({
@@ -122,8 +120,8 @@ exports.createOrder = async (req, res) => {
       item_sku,
       input,
       amount: orderAmount,
-      external_id: transactionId,
-      status: 'pending'
+      external_id: paysellerOrder.transactionId,
+      status: paysellerOrder.state // pending, completed, failed
     });
 
     const populatedOrder = await Order.findById(order._id).populate('user', 'name email');
