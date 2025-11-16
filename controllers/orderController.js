@@ -5,7 +5,6 @@ const axios = require('axios');
 
 const PAYSELLER_API_KEY = process.env.PAYSELLER_API_KEY || '081647fc48d0fcf06588665c01989944';
 const PAYSELLER_BASE_URL = 'https://x.24payseller.com';
-const WEBHOOK_URL = process.env.WEBHOOK_URL || 'http://localhost:3000/api/orders/callback';
 
 // @desc    Get all orders
 // @route   GET /api/orders

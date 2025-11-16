@@ -10,16 +10,11 @@ const productSchema = new mongoose.Schema({
     required: true,
     unique: true
   },
-  image: {
-    type: String,
-    default: null
-  },
   items: [{
     name: String,
     sku: String,
     price_mmk: Number, // Myanmar Kyat with 10% markup
-    original_price_thb: Number, // Original Thai Baht price
-    image: String // Item-specific image
+    original_price_thb: Number // Original Thai Baht price
   }],
   status: {
     type: String,
