@@ -8,17 +8,13 @@ const {
   updateOrder,
   updateOrderStatus,
   deleteOrder,
-  checkOrderStatus,
-  orderCallback
+  checkOrderStatus
 } = require('../controllers/orderController');
 const { protect, admin } = require('../middleware/auth');
 
 router.route('/')
   .get(protect, admin, getAllOrders)
   .post(protect, createOrder);
-
-// Webhook callback (no auth required for external webhook)
-router.post('/callback', orderCallback);
 
 router.route('/:id')
   .get(protect, getOrderById)

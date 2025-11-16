@@ -36,7 +36,7 @@ exports.getOrderById = async (req, res) => {
 exports.getOrdersByUser = async (req, res) => {
   try {
     const orders = await Order.find({ user: req.params.userId }).populate('user', 'name email');
-    res.json(orders);
+    res.json(orders.reverse());
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -283,41 +283,6 @@ exports.checkOrderStatus = async (req, res) => {
         error: error.response.data 
       });
     }
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// @desc    Webhook callback for order updates
-// @route   POST /api/orders/callback
-exports.orderCallback = async (req, res) => {
-  try {
-    console.log('Webhook callback received:', req.body);
-    
-    const { transactionId, state, status, message } = req.body;
-    const orderStatus = state || status;
-
-    // Find order by external_id
-    const order = await Order.findOne({ external_id: transactionId });
-    
-    if (!order) {
-      console.log(`Order not found for transactionId: ${transactionId}`);
-      return res.status(404).json({ message: 'Order not found' });
-    }
-
-    // Update order status
-    const oldStatus = order.status;
-    order.status = orderStatus || order.status;
-    await order.save();
-
-    console.log(`Order ${order._id} updated via webhook. Status: ${oldStatus} -> ${orderStatus}`);
-
-    res.json({ 
-      success: true,
-      message: 'Order updated successfully',
-      orderId: order._id
-    });
-  } catch (error) {
-    console.error('Webhook error:', error);
     res.status(500).json({ message: error.message });
   }
 };
