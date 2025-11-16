@@ -23,7 +23,7 @@ const orderSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'success', 'refund'],
+    enum: ['pending', 'completed', 'refunded', 'failed', 'processing', 'confirming'],
     default: 'pending'
   },
   external_id: {
