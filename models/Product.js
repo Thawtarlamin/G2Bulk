@@ -10,6 +10,10 @@ const productSchema = new mongoose.Schema({
     required: true,
     unique: true
   },
+  game_image: {
+    type: String,
+    default: null
+  },
   items: [{
     name: String,
     sku: String,
