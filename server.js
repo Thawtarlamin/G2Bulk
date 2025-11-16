@@ -98,6 +98,59 @@ cron.schedule('0 3 * * *', async () => {
   timezone: "Asia/Yangon"
 });
 
+// Auto check pending orders status every minute
+cron.schedule('* * * * *', async () => {
+  try {
+    const Order = require('./models/Order');
+    const PAYSELLER_API_KEY = process.env.PAYSELLER_API_KEY;
+    const PAYSELLER_BASE_URL = 'https://x.24payseller.com';
+
+    // Find all pending orders
+    const pendingOrders = await Order.find({ status: 'pending' });
+    
+    if (pendingOrders.length === 0) {
+      return;
+    }
+
+    console.log(`Checking status for ${pendingOrders.length} pending orders...`);
+
+    for (const order of pendingOrders) {
+      try {
+        // Check status from 24payseller
+        const statusResponse = await axios.get(
+          `${PAYSELLER_BASE_URL}/agent/orders/${order.external_id}`,
+          {
+            headers: {
+              'X-Api-Key': PAYSELLER_API_KEY
+            }
+          }
+        );
+
+        const externalOrder = statusResponse.data.order || statusResponse.data;
+        const externalStatus = externalOrder.state || externalOrder.status;
+
+        // Update if status changed
+        if (externalStatus && order.status !== externalStatus) {
+          order.status = externalStatus;
+          await order.save();
+          console.log(`✓ Order ${order._id} updated: pending -> ${externalStatus}`);
+          
+          // Emit socket event for real-time update
+          io.emit('orderStatusUpdate', {
+            orderId: order._id,
+            status: externalStatus,
+            transactionId: order.external_id
+          });
+        }
+      } catch (error) {
+        console.error(`Failed to check order ${order._id}:`, error.message);
+      }
+    }
+  } catch (error) {
+    console.error('Order status check cron failed:', error.message);
+  }
+});
+
 // Middleware
 app.use(cors({
   origin: ['http://localhost:5173','http://localhost:5174', 'http://localhost:3000','https://sl-game-shop-admin.vercel.app'],
