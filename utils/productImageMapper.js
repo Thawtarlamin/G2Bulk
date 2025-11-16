@@ -43,7 +43,8 @@ const assignProductImages = async (gameKey, items) => {
     const gameImageUrl = getGameImage(gameKey);
     if (gameImageUrl) {
       const fileName = generateFileName(gameImageUrl, `game_${gameKey}_`);
-      results.gameImage = await downloadImage(gameImageUrl, fileName);
+      const localPath = await downloadImage(gameImageUrl, fileName);
+      results.gameImage = localPath;
     }
 
     // Return items without individual images
