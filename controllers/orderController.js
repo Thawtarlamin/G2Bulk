@@ -84,6 +84,16 @@ exports.createOrder = async (req, res) => {
     userExists.balance -= orderAmount;
     await userExists.save();
 
+    // Log request details for debugging
+    console.log('Creating order with 24payseller:', {
+      url: `${PAYSELLER_BASE_URL}/agent/orders/create`,
+      product_key,
+      item_sku,
+      input,
+      webhookURL: WEBHOOK_URL,
+      apiKey: PAYSELLER_API_KEY ? 'Present' : 'Missing'
+    });
+
     // Create order in 24payseller
     const paysellerResponse = await axios.post(
       `${PAYSELLER_BASE_URL}/agent/orders/create`,
@@ -100,6 +110,8 @@ exports.createOrder = async (req, res) => {
         }
       }
     );
+    
+    console.log('24payseller response:', paysellerResponse.data);
     
     const { transactionId } = paysellerResponse.data;
 
@@ -121,6 +133,19 @@ exports.createOrder = async (req, res) => {
       payseller_response: paysellerResponse.data
     });
   } catch (error) {
+    // Log detailed error information
+    console.error('Order creation error:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      config: {
+        url: error.config?.url,
+        method: error.config?.method,
+        data: error.config?.data
+      }
+    });
+
     // Refund balance if order creation failed
     if (error.response && req.user) {
       const user = await User.findById(req.user._id);
@@ -131,15 +156,21 @@ exports.createOrder = async (req, res) => {
           if (item) {
             user.balance += item.price_mmk;
             await user.save();
+            console.log(`Refunded ${item.price_mmk} MMK to user ${user.email}`);
           }
         }
       }
     }
 
     if (error.response) {
+      console.error('24payseller API error response:', error.response.data);
       return res.status(error.response.status).json({ 
         message: 'Failed to create order with payment provider',
-        error: error.response.data 
+        error: error.response.data,
+        details: {
+          status: error.response.status,
+          statusText: error.response.statusText
+        }
       });
     }
     res.status(400).json({ message: error.message });
