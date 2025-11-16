@@ -10,7 +10,7 @@ const productSchema = new mongoose.Schema({
     required: true,
     unique: true
   },
-  game_image: {
+  gameImage: {
     type: String,
     default: null
   },
