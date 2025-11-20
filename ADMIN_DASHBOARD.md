@@ -91,6 +91,55 @@ src/
 
 ## 🔐 Authentication Setup
 
+### Socket.io Client Setup
+
+```javascript
+// src/utils/socket.js
+import { io } from 'socket.io-client';
+
+let socket = null;
+
+export const initSocket = () => {
+  if (!socket) {
+    socket = io('http://localhost:3000', {
+      auth: { token: localStorage.getItem('token') },
+      autoConnect: true,
+    });
+
+    socket.on('connect', () => {
+      console.log('Socket connected');
+      socket.emit('join_admin_room');
+    });
+
+    socket.on('disconnect', () => {
+      console.log('Socket disconnected');
+    });
+
+    // Listen for order status updates
+    socket.on('orderStatusUpdate', (data) => {
+      console.log('Order status updated:', data);
+      // Handle order status update notification
+    });
+
+    // Listen for new messages
+    socket.on('new_message', (data) => {
+      console.log('New message:', data);
+      // Handle new message notification
+    });
+  }
+  return socket;
+};
+
+export const getSocket = () => socket;
+
+export const disconnectSocket = () => {
+  if (socket) {
+    socket.disconnect();
+    socket = null;
+  }
+};
+```
+
 ### API Client
 
 ```javascript
@@ -136,6 +185,7 @@ export default api;
 // src/context/AuthContext.jsx
 import { createContext, useContext, useState, useEffect } from 'react';
 import api from '../utils/api';
+import { initSocket, disconnectSocket } from '../utils/socket';
 
 const AuthContext = createContext();
 
@@ -154,6 +204,7 @@ export const AuthProvider = ({ children }) => {
         const { data } = await api.get('/auth/profile');
         if (data.role === 'admin') {
           setUser(data);
+          initSocket(); // Initialize socket on successful auth
         } else {
           localStorage.removeItem('token');
         }
@@ -171,12 +222,14 @@ export const AuthProvider = ({ children }) => {
     }
     localStorage.setItem('token', data.token);
     setUser(data.user);
+    initSocket(); // Initialize socket after login
     return data;
   };
 
   const logout = () => {
     localStorage.removeItem('token');
     setUser(null);
+    disconnectSocket(); // Disconnect socket on logout
   };
 
   return (
@@ -622,10 +675,12 @@ const Orders = () => {
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'success': return 'bg-green-100 text-green-800';
+      case 'completed': return 'bg-green-100 text-green-800';
       case 'pending': return 'bg-yellow-100 text-yellow-800';
       case 'processing': return 'bg-blue-100 text-blue-800';
+      case 'confirming': return 'bg-indigo-100 text-indigo-800';
       case 'failed': return 'bg-red-100 text-red-800';
+      case 'refunded': return 'bg-orange-100 text-orange-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -638,7 +693,7 @@ const Orders = () => {
 
       {/* Filter */}
       <div className="mb-6 flex space-x-2">
-        {['all', 'pending', 'processing', 'success', 'failed'].map((status) => (
+        {['all', 'pending', 'processing', 'confirming', 'completed', 'failed', 'refunded'].map((status) => (
           <button
             key={status}
             onClick={() => setFilter(status)}
@@ -874,6 +929,234 @@ export default Topups;
 
 ---
 
+## 💬 Chat Management
+
+```javascript
+// src/pages/Chat.jsx
+import { useEffect, useState } from 'react';
+import api from '../utils/api';
+import { io } from 'socket.io-client';
+import { Send, X } from 'lucide-react';
+import { format } from 'date-fns';
+
+const Chat = () => {
+  const [chats, setChats] = useState([]);
+  const [selectedChat, setSelectedChat] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [socket, setSocket] = useState(null);
+
+  useEffect(() => {
+    fetchChats();
+    
+    // Initialize Socket.io
+    const newSocket = io('http://localhost:3000', {
+      auth: { token: localStorage.getItem('token') }
+    });
+    
+    setSocket(newSocket);
+
+    // Join admin room
+    newSocket.emit('join_admin_room');
+
+    // Listen for new messages
+    newSocket.on('new_message', (data) => {
+      if (selectedChat?._id === data.chatId) {
+        setMessages(prev => [...prev, data.message]);
+      }
+      fetchChats(); // Update chat list with new unread count
+    });
+
+    return () => newSocket.close();
+  }, []);
+
+  const fetchChats = async () => {
+    try {
+      const { data } = await api.get('/chats/all');
+      setChats(data);
+    } catch (error) {
+      console.error('Error fetching chats:', error);
+    }
+  };
+
+  const handleSelectChat = async (chat) => {
+    setSelectedChat(chat);
+    try {
+      const { data } = await api.get(`/chats/${chat._id}`);
+      setMessages(data.messages);
+      
+      // Join chat room
+      socket?.emit('join_chat', chat._id);
+      
+      // Mark as read
+      await api.patch(`/chats/${chat._id}/read`);
+      fetchChats(); // Refresh to update unread counts
+    } catch (error) {
+      console.error('Error loading chat:', error);
+    }
+  };
+
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    if (!newMessage.trim() || !selectedChat) return;
+
+    try {
+      const { data } = await api.post(`/chats/${selectedChat._id}/messages`, {
+        message: newMessage,
+      });
+      
+      setMessages(prev => [...prev, data]);
+      setNewMessage('');
+      
+      // Emit via socket for real-time delivery
+      socket?.emit('send_message', {
+        chatId: selectedChat._id,
+        message: data,
+      });
+    } catch (error) {
+      console.error('Error sending message:', error);
+    }
+  };
+
+  const handleCloseChat = async (chatId) => {
+    try {
+      await api.patch(`/chats/${chatId}/close`);
+      fetchChats();
+      if (selectedChat?._id === chatId) {
+        setSelectedChat(null);
+        setMessages([]);
+      }
+    } catch (error) {
+      alert('Error closing chat: ' + error.response?.data?.message);
+    }
+  };
+
+  return (
+    <div className="flex h-[calc(100vh-120px)]">
+      {/* Chat List */}
+      <div className="w-1/3 bg-white border-r overflow-y-auto">
+        <div className="p-4 border-b">
+          <h2 className="text-xl font-bold">Chats</h2>
+        </div>
+        <div className="divide-y">
+          {chats.map((chat) => (
+            <div
+              key={chat._id}
+              onClick={() => handleSelectChat(chat)}
+              className={`p-4 cursor-pointer hover:bg-gray-50 ${
+                selectedChat?._id === chat._id ? 'bg-blue-50' : ''
+              }`}
+            >
+              <div className="flex justify-between items-start mb-2">
+                <div>
+                  <p className="font-semibold">{chat.user?.name}</p>
+                  <p className="text-sm text-gray-500">{chat.user?.email}</p>
+                </div>
+                <div className="flex flex-col items-end space-y-1">
+                  <span className={`px-2 py-1 rounded-full text-xs ${
+                    chat.status === 'open' 
+                      ? 'bg-green-100 text-green-800' 
+                      : 'bg-gray-100 text-gray-800'
+                  }`}>
+                    {chat.status}
+                  </span>
+                  {chat.unreadCount > 0 && (
+                    <span className="bg-red-500 text-white text-xs rounded-full px-2 py-1">
+                      {chat.unreadCount}
+                    </span>
+                  )}
+                </div>
+              </div>
+              {chat.lastMessage && (
+                <p className="text-sm text-gray-600 truncate">
+                  {chat.lastMessage.message}
+                </p>
+              )}
+              <p className="text-xs text-gray-400 mt-1">
+                {format(new Date(chat.updatedAt), 'MMM dd, HH:mm')}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Chat Window */}
+      {selectedChat ? (
+        <div className="flex-1 flex flex-col bg-white">
+          {/* Chat Header */}
+          <div className="p-4 border-b flex justify-between items-center">
+            <div>
+              <h3 className="font-bold">{selectedChat.user?.name}</h3>
+              <p className="text-sm text-gray-500">{selectedChat.user?.email}</p>
+            </div>
+            <button
+              onClick={() => handleCloseChat(selectedChat._id)}
+              className="text-red-600 hover:text-red-800 flex items-center space-x-1"
+            >
+              <X className="w-4 h-4" />
+              <span>Close Chat</span>
+            </button>
+          </div>
+
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {messages.map((msg, index) => (
+              <div
+                key={index}
+                className={`flex ${msg.sender === 'admin' ? 'justify-end' : 'justify-start'}`}
+              >
+                <div
+                  className={`max-w-[70%] rounded-lg p-3 ${
+                    msg.sender === 'admin'
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-gray-200 text-gray-800'
+                  }`}
+                >
+                  <p>{msg.message}</p>
+                  <p className={`text-xs mt-1 ${
+                    msg.sender === 'admin' ? 'text-blue-100' : 'text-gray-500'
+                  }`}>
+                    {format(new Date(msg.timestamp), 'HH:mm')}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Message Input */}
+          <form onSubmit={handleSendMessage} className="p-4 border-t">
+            <div className="flex space-x-2">
+              <input
+                type="text"
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                placeholder="Type a message..."
+                className="flex-1 border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                type="submit"
+                className="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 flex items-center space-x-2"
+              >
+                <Send className="w-4 h-4" />
+                <span>Send</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : (
+        <div className="flex-1 flex items-center justify-center bg-gray-50">
+          <p className="text-gray-500">Select a chat to start messaging</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default Chat;
+```
+
+---
+
 ## 📦 Products & Settings
 
 ```javascript
@@ -1090,6 +1373,7 @@ import Users from './pages/Users';
 import Orders from './pages/Orders';
 import Topups from './pages/Topups';
 import Products from './pages/Products';
+import Chat from './pages/Chat';
 import Settings from './pages/Settings';
 
 const PrivateRoute = ({ children }) => {
@@ -1113,6 +1397,7 @@ function App() {
           <Route path="/orders" element={<PrivateRoute><Orders /></PrivateRoute>} />
           <Route path="/topups" element={<PrivateRoute><Topups /></PrivateRoute>} />
           <Route path="/products" element={<PrivateRoute><Products /></PrivateRoute>} />
+          <Route path="/chat" element={<PrivateRoute><Chat /></PrivateRoute>} />
           <Route path="/settings" element={<PrivateRoute><Settings /></PrivateRoute>} />
         </Routes>
       </BrowserRouter>
@@ -1221,8 +1506,10 @@ export const SOCKET_URL = 'http://localhost:3000';
 export const ORDER_STATUS = {
   PENDING: 'pending',
   PROCESSING: 'processing',
-  SUCCESS: 'success',
+  CONFIRMING: 'confirming',
+  COMPLETED: 'completed',
   FAILED: 'failed',
+  REFUNDED: 'refunded',
 };
 
 export const TOPUP_STATUS = {
@@ -1277,12 +1564,17 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 ## ✅ Features Included
 
 - ✅ JWT Authentication with auto-logout
+- ✅ Real-time Socket.io connection for admin
 - ✅ Dashboard with statistics and charts
-- ✅ User management (ban, unban, role change)
-- ✅ Order tracking and status checking
+- ✅ User management (ban, unban, role change, balance update)
+- ✅ Order tracking and status checking (auto-updates via cron)
+- ✅ Order status filters: pending, processing, confirming, completed, failed, refunded
 - ✅ Topup approval system with screenshots
-- ✅ Product sync from 24payseller
-- ✅ System configuration management
+- ✅ Product sync from 24payseller API
+- ✅ System configuration management (exchange rates, markup)
+- ✅ Real-time chat with Socket.io
+- ✅ Chat status management (open/closed)
+- ✅ Unread message counts
 - ✅ Responsive design with Tailwind CSS
 - ✅ Loading states and error handling
 - ✅ Date formatting with date-fns
@@ -1291,13 +1583,104 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
 ---
 
+## 🔔 Real-time Features
+
+### Order Status Updates
+- Cron job checks pending orders every minute
+- Socket.io emits `orderStatusUpdate` event when status changes
+- Admin dashboard receives real-time order updates
+
+### Chat Notifications
+- Socket.io emits `new_message` event for new chat messages
+- Admin receives real-time notifications with unread counts
+- Chat list updates automatically when new messages arrive
+
+### Socket Events
+
+**Client → Server:**
+- `join_admin_room` - Join admin room for broadcasts
+- `join_chat` - Join specific chat room
+- `send_message` - Send message to user
+
+**Server → Client:**
+- `orderStatusUpdate` - Order status changed
+  ```javascript
+  {
+    orderId: string,
+    status: string,
+    transactionId: string
+  }
+  ```
+- `new_message` - New chat message received
+  ```javascript
+  {
+    chatId: string,
+    message: object,
+    unreadCount: number
+  }
+  ```
+
+---
+
 ## 🔧 Next Steps
 
-1. Add Chat interface with Socket.io
-2. Add real-time notifications
+1. ✅ Chat interface with Socket.io (Completed)
+2. ✅ Real-time notifications (Completed)
 3. Add export to Excel functionality
-4. Add date range filters
+4. Add date range filters for orders/topups
 5. Add pagination for large datasets
 6. Add profile management
 7. Add dark mode toggle
-8. Add email notifications
+8. Add file upload progress indicators
+9. Add advanced search filters
+10. Add activity logs and audit trail
+
+---
+
+## 🌐 API Endpoints Reference
+
+### Authentication
+- `POST /api/auth/login` - Admin login
+- `GET /api/auth/profile` - Get current user profile
+
+### Dashboard & Statistics
+- `GET /api/stats/dashboard` - Dashboard overview stats
+- `GET /api/stats/yearly` - Monthly revenue data
+
+### Users
+- `GET /api/users` - Get all users
+- `PATCH /api/users/:id/ban` - Ban user
+- `PATCH /api/users/:id/unban` - Unban user
+- `PATCH /api/users/:id/role` - Change user role
+- `PATCH /api/users/:id/balance` - Update user balance
+- `PATCH /api/users/:id/reset-password` - Reset user password
+
+### Orders
+- `GET /api/orders` - Get all orders
+- `GET /api/orders/:id` - Get order details
+- `GET /api/orders/:id/check-status` - Check order status with 24payseller
+- `PATCH /api/orders/:id/status` - Update order status
+
+### Topups
+- `GET /api/topups` - Get all topups
+- `GET /api/topups/status/:status` - Get topups by status
+- `PATCH /api/topups/:id/approve` - Approve topup request
+- `PATCH /api/topups/:id/reject` - Reject topup request
+
+### Products
+- `GET /api/products` - Get all products
+- `POST /api/products/sync` - Sync products from 24payseller
+
+### System Config
+- `GET /api/system-config` - Get all configurations
+- `POST /api/system-config/init` - Initialize default configs
+- `PUT /api/system-config/:key` - Update specific config
+
+### Chats
+- `GET /api/chats/all` - Get all chats (admin)
+- `GET /api/chats/:id` - Get chat with messages
+- `POST /api/chats/:id/messages` - Send message
+- `PATCH /api/chats/:id/read` - Mark chat as read
+- `PATCH /api/chats/:id/close` - Close chat
+- `PATCH /api/chats/:id/reopen` - Reopen chat
+
