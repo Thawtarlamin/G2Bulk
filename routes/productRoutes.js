@@ -6,16 +6,13 @@ const {
   getProductByKey,
   createProduct,
   updateProduct,
-  deleteProduct,
-  syncProducts
+  deleteProduct
 } = require('../controllers/productController');
 const { protect, admin } = require('../middleware/auth');
 
 router.route('/')
   .get(getAllProducts)
   .post(protect, admin, createProduct);
-
-router.post('/sync', protect, admin, syncProducts);
 
 router.get('/key/:key', getProductByKey);
 
