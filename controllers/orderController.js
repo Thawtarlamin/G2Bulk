@@ -269,3 +269,61 @@ exports.checkOrderStatus = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+// @desc    Handle G2Bulk callback webhook
+// @route   POST /api/orders/callback
+exports.handleCallback = async (req, res) => {
+  try {
+    console.log('G2Bulk callback received:', req.body);
+
+    const { order_id, status, game, message } = req.body;
+
+    if (!order_id) {
+      return res.status(400).json({ message: 'Missing order_id in callback' });
+    }
+
+    // Find order by external_id
+    const order = await Order.findOne({ external_id: order_id.toString() });
+
+    if (!order) {
+      console.log(`Order not found for external_id: ${order_id}`);
+      return res.status(404).json({ message: 'Order not found' });
+    }
+
+    // Update order status
+    const oldStatus = order.status;
+    const newStatus = status ? status.toLowerCase() : oldStatus;
+
+    if (oldStatus !== newStatus) {
+      order.status = newStatus;
+      
+      // Add callback message to remark if exists
+      if (message) {
+        order.remark = order.remark ? `${order.remark}\nCallback: ${message}` : `Callback: ${message}`;
+      }
+
+      await order.save();
+      
+      console.log(`Order ${order._id} status updated: ${oldStatus} -> ${newStatus}`);
+
+      // If order completed, emit socket event (if socket.io is set up)
+      if (newStatus === 'completed' && global.io) {
+        global.io.to(order.user.toString()).emit('order_completed', {
+          order_id: order._id,
+          external_id: order.external_id,
+          status: newStatus
+        });
+      }
+    }
+
+    res.status(200).json({ 
+      success: true, 
+      message: 'Callback processed successfully',
+      order_id: order._id
+    });
+
+  } catch (error) {
+    console.error('Callback error:', error);
+    res.status(500).json({ message: error.message });
+  }
+};

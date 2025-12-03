@@ -8,13 +8,17 @@ const {
   updateOrder,
   updateOrderStatus,
   deleteOrder,
-  checkOrderStatus
+  checkOrderStatus,
+  handleCallback
 } = require('../controllers/orderController');
 const { protect, admin } = require('../middleware/auth');
 
 router.route('/')
   .get(protect, admin, getAllOrders)
   .post(protect, createOrder);
+
+// G2Bulk callback webhook (no authentication required)
+router.post('/callback', handleCallback);
 
 router.route('/:id')
   .get(protect, getOrderById)
