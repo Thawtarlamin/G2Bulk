@@ -1,6 +1,4 @@
-const axios = require('axios');
-
-const G2BULK_API_URL = 'https://api.g2bulk.com/v1';
+const { checkPlayerId: checkG2BulkPlayerId } = require('../utils/g2bulk');
 
 // @desc    Check player ID validation
 // @route   POST /api/validation/check-player
@@ -18,30 +16,19 @@ exports.checkPlayerId = async (req, res) => {
 
         console.log('Checking player ID:', { game, user_id, server_id });
 
-        // Prepare request body
-        const bodyData = { game, user_id };
-        if (server_id) {
-            bodyData.server_id = server_id;
-        }
+        // Call G2Bulk API using helper
+        const response = await checkG2BulkPlayerId({ 
+            game, 
+            user_id, 
+            server_id 
+        });
 
-        // Call G2Bulk API
-        const response = await axios.post(
-            `${G2BULK_API_URL}/games/checkPlayerId`,
-            bodyData,
-            { 
-                headers: { 
-                    'Content-Type': 'application/json'
-                },
-                timeout: 15000
-            }
-        );
-
-        console.log('G2Bulk response:', response.data);
+        console.log('G2Bulk response:', response);
 
         // Return success response
         return res.json({
             success: true,
-            data: response.data
+            data: response
         });
 
     } catch (error) {

@@ -25,8 +25,8 @@ app.set('io', io);
 // Connect to MongoDB
 connectDB();
 
-// Auto sync products every day at 3 AM
-cron.schedule('0 3 * * *', async () => {
+// Auto sync products every day at 3 AM (DISABLED - using manual product creation)
+// cron.schedule('0 3 * * *', async () => {
   try {
     console.log('Running daily product sync with images...');
     const Product = require('./models/Product');
@@ -94,16 +94,15 @@ cron.schedule('0 3 * * *', async () => {
   } catch (error) {
     console.error('Daily product sync failed:', error.message);
   }
-}, {
-  timezone: "Asia/Yangon"
-});
+// }, {
+//   timezone: "Asia/Yangon"
+// });
 
 // Auto check pending orders status every minute
 cron.schedule('* * * * *', async () => {
   try {
     const Order = require('./models/Order');
-    const PAYSELLER_API_KEY = process.env.PAYSELLER_API_KEY;
-    const PAYSELLER_BASE_URL = 'https://x.24payseller.com';
+    const { getOrderStatus } = require('./utils/g2bulk');
 
     // Find all pending orders
     const pendingOrders = await Order.find({ status: 'pending' });
@@ -116,18 +115,13 @@ cron.schedule('* * * * *', async () => {
 
     for (const order of pendingOrders) {
       try {
-        // Check status from 24payseller
-        const statusResponse = await axios.get(
-          `${PAYSELLER_BASE_URL}/agent/orders/${order.external_id}`,
-          {
-            headers: {
-              'X-Api-Key': PAYSELLER_API_KEY
-            }
-          }
-        );
+        // Check status from G2Bulk
+        const statusResponse = await getOrderStatus({
+          order_id: parseInt(order.external_id),
+          game: order.product_code
+        });
 
-        const externalOrder = statusResponse.data.order || statusResponse.data;
-        const externalStatus = externalOrder.state || externalOrder.status;
+        const externalStatus = statusResponse.status ? statusResponse.status.toLowerCase() : null;
 
         // Update if status changed
         if (externalStatus && order.status !== externalStatus) {

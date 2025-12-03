@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const { generateToken } = require('../middleware/auth');
 const bcrypt = require('bcryptjs');
+const { getMe: getG2BulkAccount } = require('../utils/g2bulk');
 
 // @desc    Register new user
 // @route   POST /api/auth/register
@@ -112,5 +113,20 @@ exports.updatePassword = async (req, res) => {
     });
   } catch (error) {
     res.status(400).json({ message: error.message });
+  }
+};
+
+// @desc    Get G2Bulk account info (Admin only)
+// @route   GET /api/auth/g2bulk-me
+exports.getG2BulkMe = async (req, res) => {
+  try {
+    const accountInfo = await getG2BulkAccount();
+    res.json(accountInfo);
+  } catch (error) {
+    console.error('G2Bulk getMe error:', error);
+    res.status(error.status || 500).json({ 
+      message: 'Failed to fetch G2Bulk account info',
+      error: error.response || error.message 
+    });
   }
 };

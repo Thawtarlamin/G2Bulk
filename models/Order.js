@@ -6,13 +6,23 @@ const orderSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
-  product_key: {
+  product_code:{
     type: String,
     required: true
   },
-  item_sku: {
+  catalogue_name: {
     type: String,
     required: true
+  },
+  player_id: {
+    type: String,
+    required: true
+  },
+  server_id: {
+    type: String
+  },
+  remark: {
+    type: String
   },
   input: {
     type: Object

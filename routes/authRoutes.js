@@ -4,14 +4,16 @@ const {
   register,
   login,
   getMe,
-  updatePassword
+  updatePassword,
+  getG2BulkMe
 } = require('../controllers/authController');
-const { protect } = require('../middleware/auth');
+const { protect, admin } = require('../middleware/auth');
 
 router.post('/register', register);
 router.post('/login', login);
 router.get('/me', protect, getMe);
 router.get('/profile', protect, getMe); // Alias for React admin dashboard
 router.put('/password', protect, updatePassword);
+router.get('/g2bulk-me', protect, admin, getG2BulkMe);
 
 module.exports = router;

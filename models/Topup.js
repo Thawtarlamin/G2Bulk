@@ -19,15 +19,7 @@ const topupSchema = new mongoose.Schema({
     enum: ['pending', 'approved', 'rejected'],
     default: 'pending'
   },
-  last_six_digit: {
-    type: String,
-    required: true
-  },
   screenshot_url: {
-    type: String,
-    required: true
-  },
-  transaction_id: {
     type: String,
     required: true
   },

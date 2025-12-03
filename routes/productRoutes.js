@@ -4,13 +4,16 @@ const {
   getAllProducts,
   getProductById,
   getProductByKey,
+  createProduct,
   updateProduct,
   deleteProduct,
   syncProducts
 } = require('../controllers/productController');
 const { protect, admin } = require('../middleware/auth');
 
-router.get('/', getAllProducts);
+router.route('/')
+  .get(getAllProducts)
+  .post(protect, admin, createProduct);
 
 router.post('/sync', protect, admin, syncProducts);
 

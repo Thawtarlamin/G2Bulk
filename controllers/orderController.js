@@ -1,10 +1,7 @@
 const Order = require('../models/Order');
 const User = require('../models/User');
 const Product = require('../models/Product');
-const axios = require('axios');
-
-const PAYSELLER_API_KEY = process.env.PAYSELLER_API_KEY || '081647fc48d0fcf06588665c01989944';
-const PAYSELLER_BASE_URL = 'https://x.24payseller.com';
+const { placeOrder, getOrderStatus: getG2BulkOrderStatus } = require('../utils/g2bulk');
 
 // @desc    Get all orders
 // @route   GET /api/orders
@@ -46,7 +43,7 @@ exports.getOrdersByUser = async (req, res) => {
 // @route   POST /api/orders
 exports.createOrder = async (req, res) => {
   try {
-    const { product_key, item_sku, input } = req.body;
+    const { product_code, catalogue_name, player_id, server_id, remark } = req.body;
 
     // Get user from authenticated request
     const user = req.user._id;
@@ -56,18 +53,18 @@ exports.createOrder = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Find product and item to get price
-    const product = await Product.findOne({ key: product_key });
+    // Find product and catalogue to get price
+    const product = await Product.findOne({ 'game.code': product_code });
     if (!product) {
       return res.status(404).json({ message: 'Product not found' });
     }
 
-    const item = product.items.find(i => i.sku === item_sku);
-    if (!item) {
-      return res.status(404).json({ message: 'Item not found in product' });
+    const catalogue = product.catalogues.find(c => c.name === catalogue_name);
+    if (!catalogue) {
+      return res.status(404).json({ message: 'Catalogue not found in product' });
     }
 
-    const orderAmount = item.price_mmk;
+    const orderAmount = catalogue.amount;
 
     // Check if user has sufficient balance
     if (userExists.balance < orderAmount) {
@@ -84,50 +81,45 @@ exports.createOrder = async (req, res) => {
     await userExists.save();
 
     // Log request details for debugging
-    console.log('Creating order with 24payseller:', {
-      url: `${PAYSELLER_BASE_URL}/agent/orders/create`,
-      product_key,
-      item_sku,
-      input,
-      apiKey: PAYSELLER_API_KEY ? 'Present' : 'Missing'
+    console.log('Creating order with G2Bulk:', {
+      game: product_code,
+      catalogue_name,
+      player_id,
+      server_id
     });
 
-    // Create order in 24payseller (no webhook needed - they return response directly)
-    const paysellerResponse = await axios.post(
-      `${PAYSELLER_BASE_URL}/agent/orders/create`,
-      {
-        product_key,
-        item_sku,
-        input
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Api-Key': PAYSELLER_API_KEY
-        }
-      }
-    );
+    // Create order with G2Bulk
+    const g2bulkResponse = await placeOrder(product_code, {
+      catalogue_name,
+      player_id,
+      server_id,
+      remark: remark || `Order by ${userExists.email}`,
+      callback_url: process.env.G2BULK_CALLBACK_URL || ''
+    });
     
-    console.log('24payseller response:', paysellerResponse.data);
+    console.log('G2Bulk response:', g2bulkResponse);
     
-    const { order: paysellerOrder } = paysellerResponse.data;
+    const { order: g2bulkOrder } = g2bulkResponse;
 
     // Save order to database
     const order = await Order.create({
       user,
-      product_key,
-      item_sku,
-      input,
+      product_code,
+      catalogue_name,
+      player_id,
+      server_id,
+      remark: remark || `Order by ${userExists.email}`,
+      input: { player_id, server_id },
       amount: orderAmount,
-      external_id: paysellerOrder.transactionId,
-      status: paysellerOrder.state // pending, completed, failed
+      external_id: g2bulkOrder.order_id.toString(),
+      status: g2bulkOrder.status.toLowerCase() // PENDING, PROCESSING, COMPLETED, FAILED
     });
 
     const populatedOrder = await Order.findById(order._id).populate('user', 'name email');
     
     res.status(201).json({
       ...populatedOrder.toObject(),
-      payseller_response: paysellerResponse.data
+      g2bulk_response: g2bulkResponse
     });
   } catch (error) {
     // Log detailed error information
@@ -146,28 +138,24 @@ exports.createOrder = async (req, res) => {
     // Refund balance if order creation failed
     if (error.response && req.user) {
       const user = await User.findById(req.user._id);
-      if (user && req.body.product_key) {
-        const product = await Product.findOne({ key: req.body.product_key });
+      if (user && req.body.product_code && req.body.catalogue_name) {
+        const product = await Product.findOne({ 'game.code': req.body.product_code });
         if (product) {
-          const item = product.items.find(i => i.sku === req.body.item_sku);
-          if (item) {
-            user.balance += item.price_mmk;
+          const catalogue = product.catalogues.find(c => c.name === req.body.catalogue_name);
+          if (catalogue) {
+            user.balance += catalogue.amount;
             await user.save();
-            console.log(`Refunded ${item.price_mmk} MMK to user ${user.email}`);
+            console.log(`Refunded ${catalogue.amount} MMK to user ${user.email}`);
           }
         }
       }
     }
 
     if (error.response) {
-      console.error('24payseller API error response:', error.response.data);
-      return res.status(error.response.status).json({ 
-        message: 'Failed to create order with payment provider',
-        error: error.response.data,
-        details: {
-          status: error.response.status,
-          statusText: error.response.statusText
-        }
+      console.error('G2Bulk API error response:', error.response);
+      return res.status(error.status || 500).json({ 
+        message: 'Failed to create order with G2Bulk',
+        error: error.response
       });
     }
     res.status(400).json({ message: error.message });
@@ -234,7 +222,7 @@ exports.deleteOrder = async (req, res) => {
   }
 };
 
-// @desc    Check order status from 24payseller
+// @desc    Check order status from G2Bulk
 // @route   GET /api/orders/:id/check-status
 exports.checkOrderStatus = async (req, res) => {
   try {
@@ -248,39 +236,34 @@ exports.checkOrderStatus = async (req, res) => {
       return res.status(400).json({ message: 'Order has no external transaction ID' });
     }
 
-    // Get order status from 24payseller
-    const statusResponse = await axios.get(
-      `${PAYSELLER_BASE_URL}/agent/orders/${order.external_id}`,
-      {
-        headers: {
-          'X-Api-Key': PAYSELLER_API_KEY
-        }
-      }
-    );
+    // Get order status from G2Bulk
+    const statusResponse = await getG2BulkOrderStatus({
+      order_id: parseInt(order.external_id),
+      game: order.product_code
+    });
 
-    console.log('24payseller status check:', statusResponse.data);
+    console.log('G2Bulk status check:', statusResponse);
 
     // Update local order status if different
-    const externalOrder = statusResponse.data.order || statusResponse.data;
-    const externalStatus = externalOrder.state || externalOrder.status;
+    const externalStatus = statusResponse.status ? statusResponse.status.toLowerCase() : null;
     
     if (externalStatus && order.status !== externalStatus) {
       order.status = externalStatus;
       await order.save();
-      console.log(`Order ${order._id} status updated from ${order.status} to ${externalStatus}`);
+      console.log(`Order ${order._id} status updated to ${externalStatus}`);
     }
 
     const populatedOrder = await Order.findById(order._id).populate('user', 'name email');
 
     res.json({
       order: populatedOrder,
-      external_status: statusResponse.data
+      external_status: statusResponse
     });
   } catch (error) {
     if (error.response) {
-      return res.status(error.response.status).json({ 
+      return res.status(error.status || 500).json({ 
         message: 'Failed to check order status',
-        error: error.response.data 
+        error: error.response
       });
     }
     res.status(500).json({ message: error.message });

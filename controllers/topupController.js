@@ -71,7 +71,7 @@ exports.uploadScreenshot = async (req, res) => {
 // @route   POST /api/topups
 exports.createTopup = async (req, res) => {
   try {
-    const { amount, payment_method, transaction_id, last_six_digit } = req.body;
+    const { amount, method } = req.body;
 
     // Get screenshot URL from uploaded file
     let screenshot_url = req.body.screenshot_url;
@@ -80,16 +80,11 @@ exports.createTopup = async (req, res) => {
     }
 
     // Validate required fields
-    if (!amount || !payment_method || !transaction_id || !screenshot_url || !last_six_digit) {
+    if (!amount || !method || !screenshot_url) {
       return res.status(400).json({ 
-        message: 'All fields are required: amount, payment_method, transaction_id, screenshot (file or URL), last_six_digit' 
+        message: 'All fields are required: amount, method, screenshot (file or URL)' 
       });
     }
-
-    // // Validate payment method
-    // if (!['kpay', 'wavepay'].includes(payment_method)) {
-    //   return res.status(400).json({ message: 'Payment method must be kpay or wavepay' });
-    // }
 
     // Validate amount
     const parsedAmount = parseInt(amount);
@@ -97,19 +92,11 @@ exports.createTopup = async (req, res) => {
       return res.status(400).json({ message: 'Amount must be a positive number' });
     }
 
-    // Validate last_six_digit
-    const parsedLastSixDigit = parseInt(last_six_digit);
-    if (isNaN(parsedLastSixDigit)) {
-      return res.status(400).json({ message: 'Last six digit must be a number' });
-    }
-
     const topup = await Topup.create({
       user: req.user._id,
-      method: payment_method,
+      method,
       amount: parsedAmount,
-      transaction_id,
-      screenshot_url,
-      last_six_digit: parsedLastSixDigit
+      screenshot_url
     });
 
     const populatedTopup = await Topup.findById(topup._id).populate('user', 'name email');

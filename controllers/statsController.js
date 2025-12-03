@@ -11,12 +11,12 @@ exports.getDashboardStats = async (req, res) => {
     
     // Total orders
     const totalOrders = await Order.countDocuments();
-    const successOrders = await Order.countDocuments({ status: 'success' });
+    const successOrders = await Order.countDocuments({ status: 'completed' });
     const pendingOrders = await Order.countDocuments({ status: 'pending' });
     
     // Total revenue from orders (all time)
     const orderRevenue = await Order.aggregate([
-      { $match: { status: 'success' } },
+      { $match: { status: 'completed' } },
       { $group: { _id: null, total: { $sum: '$amount' } } }
     ]);
     
@@ -70,7 +70,7 @@ exports.getMonthlyStats = async (req, res) => {
     const monthlyOrders = await Order.aggregate([
       {
         $match: {
-          status: 'success',
+          status: 'completed',
           createdAt: { $gte: startDate, $lte: endDate }
         }
       },
@@ -136,7 +136,7 @@ exports.getYearlyStats = async (req, res) => {
     const ordersbyMonth = await Order.aggregate([
       {
         $match: {
-          status: 'success',
+          status: 'completed',
           createdAt: {
             $gte: new Date(targetYear, 0, 1),
             $lte: new Date(targetYear, 11, 31, 23, 59, 59)
@@ -224,10 +224,10 @@ exports.getTopProducts = async (req, res) => {
     const { limit = 10 } = req.query;
 
     const topProducts = await Order.aggregate([
-      { $match: { status: 'success' } },
+      { $match: { status: 'completed' } },
       {
         $group: {
-          _id: '$product_key',
+          _id: '$product_code',
           totalRevenue: { $sum: '$amount' },
           orderCount: { $sum: 1 }
         }

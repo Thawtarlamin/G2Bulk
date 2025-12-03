@@ -1,9 +1,5 @@
 const Product = require('../models/Product');
-const axios = require('axios');
 const SystemConfig = require('../models/SystemConfig');
-const { assignProductImages } = require('../utils/productImageMapper');
-
-const PAYSELLER_BASE_URL = 'https://x.24payseller.com';
 
 // @desc    Get all products
 // @route   GET /api/products
@@ -11,27 +7,18 @@ exports.getAllProducts = async (req, res) => {
     try {
         const products = await Product.find({ status: 'active' });
         
-        // Add percentage calculation and sort items by price_mmk
-        const productsWithPercentage = products.map(product => {
+        // Sort catalogues by amount (low to high)
+        const productsWithSortedCatalogues = products.map(product => {
             const productObj = product.toObject();
             
-            // Sort items by price_mmk (low to high)
-            productObj.items = productObj.items
-                .map(item => {
-                    const percentage = item.original_price_thb > 0 
-                        ? ((item.price_mmk / item.original_price_thb - 1) * 100).toFixed(2)
-                        : 0;
-                    return {
-                        ...item,
-                        markup_percentage: parseFloat(percentage)
-                    };
-                })
-                .sort((a, b) => a.price_mmk - b.price_mmk);
+            if (productObj.catalogues && productObj.catalogues.length > 0) {
+                productObj.catalogues = productObj.catalogues.sort((a, b) => a.amount - b.amount);
+            }
             
             return productObj;
         });
         
-        res.json(productsWithPercentage);
+        res.json(productsWithSortedCatalogues);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -55,88 +42,73 @@ exports.getProductById = async (req, res) => {
 // @route   GET /api/products/key/:key
 exports.getProductByKey = async (req, res) => {
     try {
-        const product = await Product.findOne({ key: req.params.key });
+        const product = await Product.findOne({ 'game.code': req.params.key });
         if (!product) {
             return res.status(404).json({ message: 'Product not found' });
         }
-        res.json(product);
+
+        const productObj = product.toObject();
+        
+        // Sort catalogues by amount (low to high)
+        if (productObj.catalogues && productObj.catalogues.length > 0) {
+            productObj.catalogues = productObj.catalogues.sort((a, b) => a.amount - b.amount);
+        }
+
+        res.json(productObj);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
 };
 
-// @desc    Sync products from 24payseller
-// @route   POST /api/products/sync
-exports.syncProducts = async (req, res) => {
+// @desc    Create product manually
+// @route   POST /api/products
+exports.createProduct = async (req, res) => {
     try {
-        // Get exchange rate and markup from database
-        const exchangeRateConfig = await SystemConfig.findOne({ key: 'exchange_rate' });
-        const markupRateConfig = await SystemConfig.findOne({ key: 'markup_rate' });
-        
-        const exchangeRate = exchangeRateConfig?.value || 125.79;
-        const markupRate = markupRateConfig?.value || 1.10;
+        const { game, catalogues, tag } = req.body;
 
-        const response = await axios.get(`${PAYSELLER_BASE_URL}/products/list`);
-        
-        const targetGames = [
-            'mobile-legends-global',
-            'mobile-legends-indonesia',
-            'mobile-legends-malaysia',
-            'mlbb-php-flashsale',
-            'mobile-legends-singapore',
-            'honor-of-kings-global',
-            'magicchess-go-go',
-            'pubg-mobile-global',
-            'free-fire-i',
-            'free-fire-v1',
-            'free-fire-sg',
-            'free-fire-my'
-        ];
-
-        const productsData = response.data;
-        let syncedCount = 0;
-        
-        for (const productData of productsData) {
-            if (targetGames.includes(productData.key)) {
-                // Convert prices to MMK with markup, excluding "First Top Up" items
-                const items = productData.items
-                    .filter(item => !item.name.toLowerCase().includes('first top up'))
-                    .map(item => ({
-                        name: item.name,
-                        sku: item.sku,
-                        original_price_thb: parseFloat(item.price),
-                        price_mmk: Math.round(parseFloat(item.price) * exchangeRate * markupRate)
-                    }));
-               
-                // Assign images to game and items
-                console.log(`Processing images for ${productData.key}...`);
-                const imageResults = await assignProductImages(productData.key, items);
-                
-                await Product.findOneAndUpdate(
-                    { key: productData.key },
-                    {
-                        game: productData.name,
-                        key: productData.key,
-                        gameImage: imageResults.gameImage,
-                        items: imageResults.items,
-                        status: 'active'
-                    },
-                    { upsert: true, new: true }
-                );
-
-                syncedCount++;
-                console.log(`✓ Synced ${productData.key} with images`);
-            }
+        // Validate required fields
+        if (!game || !game.code || !game.name || !game.image_url) {
+            return res.status(400).json({ 
+                message: 'Game object with code, name, and image_url is required' 
+            });
         }
 
-        res.json({ 
-          message: `Successfully synced ${syncedCount} products with images`,
-          games: targetGames,
-          syncedCount 
+        if (!catalogues || !Array.isArray(catalogues) || catalogues.length === 0) {
+            return res.status(400).json({ 
+                message: 'Catalogues array is required and must not be empty' 
+            });
+        }
+
+        // Check if product with same game code already exists
+        const existingProduct = await Product.findOne({ 'game.code': game.code });
+        if (existingProduct) {
+            return res.status(400).json({ 
+                message: `Product with game code '${game.code}' already exists` 
+            });
+        }
+
+        // Create product
+        const product = await Product.create({
+            game: {
+                code: game.code,
+                name: game.name,
+                image_url: game.image_url
+            },
+            catalogues: catalogues.map((cat, index) => ({
+                id: cat.id || index + 1,
+                name: cat.name,
+                amount: cat.amount
+            })),
+            tag: tag || 'game',
+            status: 'active'
+        });
+
+        res.status(201).json({
+            message: 'Product created successfully',
+            product
         });
     } catch (error) {
-        console.error('Sync error:', error);
-        res.status(500).json({ message: error.message });
+        res.status(400).json({ message: error.message });
     }
 };
 
@@ -144,17 +116,41 @@ exports.syncProducts = async (req, res) => {
 // @route   PUT /api/products/:id
 exports.updateProduct = async (req, res) => {
     try {
-        const product = await Product.findByIdAndUpdate(
-            req.params.id,
-            req.body,
-            { new: true, runValidators: true }
-        );
-        
+        const { game, catalogues, tag, status } = req.body;
+
+        const product = await Product.findById(req.params.id);
         if (!product) {
             return res.status(404).json({ message: 'Product not found' });
         }
+
+        // Update game object
+        if (game) {
+            product.game = {
+                code: game.code || product.game.code,
+                name: game.name || product.game.name,
+                image_url: game.image_url || product.game.image_url
+            };
+        }
+
+        // Update catalogues
+        if (catalogues && Array.isArray(catalogues)) {
+            product.catalogues = catalogues.map((cat, index) => ({
+                id: cat.id || index + 1,
+                name: cat.name,
+                amount: cat.amount
+            }));
+        }
+
+        // Update tag and status
+        if (tag) product.tag = tag;
+        if (status) product.status = status;
+
+        await product.save();
         
-        res.json(product);
+        res.json({
+            message: 'Product updated successfully',
+            product
+        });
     } catch (error) {
         res.status(400).json({ message: error.message });
     }
