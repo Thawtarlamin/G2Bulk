@@ -28,7 +28,6 @@ exports.protect = async (req, res, next) => {
           bannedAt: req.user.bannedAt
         });
       }
-
       next();
     } catch (error) {
       return res.status(401).json({ message: 'Not authorized, token failed' });

@@ -32,7 +32,7 @@ exports.getOrderById = async (req, res) => {
 // @route   GET /api/orders/user/:userId
 exports.getOrdersByUser = async (req, res) => {
   try {
-    const orders = await Order.find({ user: req.params.userId }).populate('user', 'name email');
+    const orders = await Order.find({ user: req.user._id }).populate('user', 'name email');
     res.json(orders.reverse());
   } catch (error) {
     res.status(500).json({ message: error.message });
