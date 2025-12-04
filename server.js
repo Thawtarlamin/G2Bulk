@@ -26,7 +26,7 @@ app.set('io', io);
 connectDB();
 // Middleware
 app.use(cors({
-  origin: ['http://localhost:5173','http://localhost:5174', 'http://localhost:3000','https://sl-game-shop-admin.vercel.app'],
+  origin: ['http://localhost:5173','http://localhost:5174', 'http://localhost:3000', 'http://localhost:3001','https://sl-game-shop-admin.vercel.app'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
@@ -41,7 +41,7 @@ app.use('/uploads', express.static('uploads'));
 
 // Routes
 app.get('/', (req, res) => {
-  res.json({ message: 'SL Gaming Shop API' });
+  res.json({ message: 'G2Bulk Gaming Shop API' });
 });
 
 // API Routes
@@ -130,6 +130,84 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log(`User disconnected: ${socket.user.name}`);
   });
+});
+
+// Cron job: Check pending/processing/confirming orders every second
+cron.schedule('* * * * * *', async () => {
+  try {
+    const Order = require('./models/Order');
+    const { getOrderStatus } = require('./utils/g2bulk');
+
+    // Find only pending orders
+    const pendingOrders = await Order.find({ 
+      status: { $in: ['pending', 'processing', 'confirming'] }
+    });
+    
+    if (pendingOrders.length === 0) {
+      return;
+    }
+
+    console.log(`Checking ${pendingOrders.length} pending orders...`);
+
+    for (const order of pendingOrders) {
+      try {
+        if (!order.external_id || !order.product_code) {
+          console.log(`Order ${order._id} missing external_id or product_code, skipping`);
+          continue;
+        }
+        console.log(`Checking order ${order._id} with external ID ${order.external_id}`);
+        // Check status from G2Bulk
+        const statusResponse = await getOrderStatus({
+          order_id: parseInt(order.external_id),
+          game: order.product_code
+        });
+        const externalStatus = statusResponse.order.status ? statusResponse.order.status.toLowerCase() : null;
+
+        // Update if status changed
+        if (externalStatus && order.status !== externalStatus) {
+          const oldStatus = order.status;
+          order.status = externalStatus;
+          
+          // If order is refunded, return money to user
+          if (externalStatus === 'refunded' && order.amount && order.user) {
+            const UserModel = require('./models/User');
+            const user = await UserModel.findById(order.user);
+            
+            if (user) {
+              user.balance += order.amount;
+              await user.save();
+              console.log(`💰 Refunded ${order.amount} MMK to user ${user.email} (Order ${order._id})`);
+            }
+          }
+          
+          await order.save();
+          
+          console.log(`✓ Order ${order._id} updated: ${oldStatus} -> ${externalStatus}`);
+          
+          // Emit socket event for real-time update
+          io.to(`user_${order.user}`).emit('orderStatusUpdate', {
+            orderId: order._id,
+            status: externalStatus,
+            external_id: order.external_id,
+            refunded: externalStatus === 'refunded' ? order.amount : null
+          });
+
+          // Notify admin room
+          io.to('admin_room').emit('orderStatusUpdate', {
+            orderId: order._id,
+            userId: order.user,
+            status: externalStatus,
+            external_id: order.external_id,
+            refunded: externalStatus === 'refunded' ? order.amount : null
+          });
+        }
+      } catch (error) {
+        console.error(`Failed to check order ${order._id}:`, error.message);
+      }
+    }
+  } catch (error) {
+    console.error('Order status check cron failed:', error.message);
+  }
 });
 
 const PORT = process.env.PORT || 3000;

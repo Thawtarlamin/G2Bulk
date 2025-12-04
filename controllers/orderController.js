@@ -106,8 +106,6 @@ exports.createOrder = async (req, res) => {
       user,
       product_code,
       catalogue_name,
-      player_id,
-      server_id,
       remark: remark || `Order by ${userExists.email}`,
       input: { player_id, server_id },
       amount: orderAmount,

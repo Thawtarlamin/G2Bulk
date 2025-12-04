@@ -17,7 +17,6 @@ router.route('/')
   .get(protect, admin, getAllOrders)
   .post(protect, createOrder);
 
-// G2Bulk callback webhook (no authentication required)
 router.post('/callback', handleCallback);
 
 router.route('/:id')

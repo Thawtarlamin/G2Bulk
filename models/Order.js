@@ -14,13 +14,6 @@ const orderSchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  player_id: {
-    type: String,
-    required: true
-  },
-  server_id: {
-    type: String
-  },
   remark: {
     type: String
   },
