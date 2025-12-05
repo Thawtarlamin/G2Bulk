@@ -1,5 +1,6 @@
 const Topup = require('../models/Topup');
 const User = require('../models/User');
+const { uploadBuffer } = require('../utils/cloudinary');
 
 // @desc    Get all topups
 // @route   GET /api/topups
@@ -56,11 +57,13 @@ exports.uploadScreenshot = async (req, res) => {
       return res.status(400).json({ message: 'No file uploaded' });
     }
 
-    const fileUrl = `/uploads/screenshots/${req.file.filename}`;
+    // Upload buffer to Cloudinary
+    const result = await uploadBuffer(req.file.buffer, { folder: 'g2bulk/topups' });
+
     res.status(200).json({ 
       message: 'Screenshot uploaded successfully',
-      url: fileUrl,
-      filename: req.file.filename
+      url: result.secure_url,
+      public_id: result.public_id
     });
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -73,10 +76,12 @@ exports.createTopup = async (req, res) => {
   try {
     const { amount, method } = req.body;
 
-    // Get screenshot URL from uploaded file
+    // Get screenshot URL from uploaded file or body
     let screenshot_url = req.body.screenshot_url;
     if (req.file) {
-      screenshot_url = `/uploads/screenshots/${req.file.filename}`;
+      // Upload to Cloudinary and use secure URL
+      const result = await uploadBuffer(req.file.buffer, { folder: 'g2bulk/topups' });
+      screenshot_url = result.secure_url;
     }
 
     // Validate required fields

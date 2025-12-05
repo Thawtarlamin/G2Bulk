@@ -60,8 +60,6 @@ app.use('/api/payment-accounts', require('./routes/paymentAccountRoutes'));
 app.use('/api/topups', require('./routes/topupRoutes'));
 app.use('/api/products', require('./routes/productRoutes'));
 app.use('/api/chat', require('./routes/chatRoutes'));
-app.use('/api/stats', require('./routes/statsRoutes'));
-app.use('/api/system-config', require('./routes/systemConfigRoutes'));
 
 // Socket.io Authentication Middleware
 io.use(async (socket, next) => {

@@ -1,5 +1,5 @@
 const Product = require('../models/Product');
-const SystemConfig = require('../models/SystemConfig');
+const { uploadBuffer, cloudinary } = require('../utils/cloudinary');
 
 // @desc    Get all products
 // @route   GET /api/products
@@ -66,6 +66,18 @@ exports.createProduct = async (req, res) => {
     try {
         const { game, catalogues, tag } = req.body;
 
+        // If an image file is uploaded, upload it to Cloudinary and set game.image_url
+        if (req.file) {
+            try {
+                const result = await uploadBuffer(req.file.buffer, { folder: 'g2bulk/products' });
+                // Ensure game object exists
+                if (!req.body.game) req.body.game = {};
+                req.body.game.image_url = result.secure_url;
+            } catch (err) {
+                return res.status(500).json({ message: 'Failed to upload product image', error: err.message });
+            }
+        }
+
         // Validate required fields
         if (!game || !game.code || !game.name || !game.image_url) {
             return res.status(400).json({ 
@@ -123,6 +135,18 @@ exports.updateProduct = async (req, res) => {
             return res.status(404).json({ message: 'Product not found' });
         }
 
+        // If a new image file is uploaded, upload to Cloudinary and set URL
+        if (req.file) {
+            try {
+                const result = await uploadBuffer(req.file.buffer, { folder: 'g2bulk/products' });
+                // ensure game object
+                if (!req.body.game) req.body.game = {};
+                req.body.game.image_url = result.secure_url;
+            } catch (err) {
+                return res.status(500).json({ message: 'Failed to upload product image', error: err.message });
+            }
+        }
+
         // Update game object
         if (game) {
             product.game = {
@@ -160,12 +184,29 @@ exports.updateProduct = async (req, res) => {
 // @route   DELETE /api/products/:id
 exports.deleteProduct = async (req, res) => {
     try {
-        const product = await Product.findByIdAndDelete(req.params.id);
-        
+        const product = await Product.findById(req.params.id);
         if (!product) {
             return res.status(404).json({ message: 'Product not found' });
         }
-        
+
+        // Attempt to delete Cloudinary image if present
+        try {
+            const imageUrl = product.game && product.game.image_url ? product.game.image_url : null;
+            if (imageUrl && imageUrl.includes('res.cloudinary.com')) {
+                // Extract public_id from URL: /upload/(v1234/)?<public_id>.<ext>
+                const match = imageUrl.match(/\/upload\/(?:v\d+\/)?(.+?)\.[^/.]+$/);
+                if (match && match[1]) {
+                    const publicId = match[1];
+                    await cloudinary.uploader.destroy(publicId, { resource_type: 'image' });
+                }
+            }
+        } catch (err) {
+            // Log and continue - don't block product deletion on Cloudinary errors
+            console.error('Failed to remove product image from Cloudinary:', err.message || err);
+        }
+
+        await Product.findByIdAndDelete(req.params.id);
+
         res.json({ message: 'Product deleted successfully' });
     } catch (error) {
         res.status(500).json({ message: error.message });
