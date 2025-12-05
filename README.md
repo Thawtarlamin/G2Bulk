@@ -25,7 +25,6 @@
   - `POST /api/products/sync` : Sync products from G2Bulk
   - `GET /api/stats/dashboard` : Get statistics dashboard
   - `GET /api/chat/all` : Get all chats
-  - `POST /api/system-config/init` : Initialize default system configs
 
 **Usage example (player validation):**
 
@@ -36,3 +35,4 @@ curl -X POST http://localhost:3000/api/validation/check-player \
 ```
 
 If you want additional details (examples, request/response samples, or a full API document), tell me which endpoints to expand and I'll add them.
+
