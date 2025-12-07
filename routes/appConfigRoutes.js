@@ -4,8 +4,6 @@ const {
   getAppConfig,
   upsertAppConfig,
   updateAdText,
-  addTag,
-  removeTag,
   addViewPager,
   removeViewPager,
   deleteAppConfig
@@ -19,8 +17,6 @@ router.get('/', getAppConfig);
 // Admin only routes
 router.post('/', protect, admin, upload.array('images', 10), upsertAppConfig);
 router.put('/ad-text', protect, admin, updateAdText);
-router.post('/tags', protect, admin, addTag);
-router.delete('/tags/:index', protect, admin, removeTag);
 router.post('/view-pager', protect, admin, upload.single('image'), addViewPager);
 router.delete('/view-pager/:index', protect, admin, removeViewPager);
 router.delete('/', protect, admin, deleteAppConfig);

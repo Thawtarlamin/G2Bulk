@@ -13,14 +13,26 @@ exports.getAppConfig = async (req, res) => {
     if (!config) {
       config = await AppConfig.create({
         ad_text: '',
-        tag: [],
         view_pager: []
       });
     }
     
+    // Fetch active tags from Tag model
+    const tags = await Tag.find({ status: 'active' }).select('name description');
+    
+    // Format response with tags
+    const response = {
+      ad_text: config.ad_text,
+      tag: tags.map(tag => ({ tags: tag.name })),
+      view_pager: config.view_pager,
+      _id: config._id,
+      createdAt: config.createdAt,
+      updatedAt: config.updatedAt
+    };
+    
     res.json({
       success: true,
-      data: config
+      data: response
     });
   } catch (error) {
     res.status(500).json({
@@ -36,36 +48,14 @@ exports.getAppConfig = async (req, res) => {
 // @access  Admin
 exports.upsertAppConfig = async (req, res) => {
   try {
-    const { ad_text, tag, view_pager } = req.body;
+    const { ad_text, view_pager } = req.body;
     
     // Validation
-    if (tag && !Array.isArray(tag)) {
-      return res.status(400).json({
-        success: false,
-        message: 'tag must be an array'
-      });
-    }
-    
     if (view_pager && !Array.isArray(view_pager)) {
       return res.status(400).json({
         success: false,
         message: 'view_pager must be an array'
       });
-    }
-    
-    // Validate tags exist in Tag database
-    if (tag && Array.isArray(tag)) {
-      for (const tagItem of tag) {
-        if (tagItem.tags) {
-          const tagExists = await Tag.findOne({ name: tagItem.tags, status: 'active' });
-          if (!tagExists) {
-            return res.status(400).json({
-              success: false,
-              message: `Tag '${tagItem.tags}' does not exist or is inactive. Please create the tag first.`
-            });
-          }
-        }
-      }
     }
     
     // If files uploaded (multiple images), upload to Cloudinary
@@ -93,7 +83,6 @@ exports.upsertAppConfig = async (req, res) => {
     if (config) {
       // Update existing
       if (ad_text !== undefined) config.ad_text = ad_text;
-      if (tag !== undefined) config.tag = tag;
       if (view_pager !== undefined) config.view_pager = view_pager;
       
       // If new images uploaded, append or replace
@@ -110,7 +99,6 @@ exports.upsertAppConfig = async (req, res) => {
       // Create new
       config = await AppConfig.create({
         ad_text: ad_text || '',
-        tag: tag || [],
         view_pager: uploadedImages.length > 0 ? uploadedImages : (view_pager || [])
       });
     }
@@ -146,7 +134,7 @@ exports.updateAdText = async (req, res) => {
     let config = await AppConfig.findOne();
     
     if (!config) {
-      config = await AppConfig.create({ ad_text, tag: [], view_pager: [] });
+      config = await AppConfig.create({ ad_text, view_pager: [] });
     } else {
       config.ad_text = ad_text;
       await config.save();
@@ -161,96 +149,6 @@ exports.updateAdText = async (req, res) => {
     res.status(400).json({
       success: false,
       message: 'Failed to update ad text',
-      error: error.message
-    });
-  }
-};
-
-// @desc    Add tag
-// @route   POST /api/app-config/tags
-// @access  Admin
-exports.addTag = async (req, res) => {
-  try {
-    const { tags } = req.body;
-    
-    if (!tags) {
-      return res.status(400).json({
-        success: false,
-        message: 'tags is required'
-      });
-    }
-    
-    // Validate tag exists in Tag database
-    const tagExists = await Tag.findOne({ name: tags, status: 'active' });
-    if (!tagExists) {
-      return res.status(400).json({
-        success: false,
-        message: `Tag '${tags}' does not exist or is inactive. Please create the tag first.`
-      });
-    }
-    
-    let config = await AppConfig.findOne();
-    
-    if (!config) {
-      config = await AppConfig.create({
-        ad_text: '',
-        tag: [{ tags }],
-        view_pager: []
-      });
-    } else {
-      config.tag.push({ tags });
-      await config.save();
-    }
-    
-    res.json({
-      success: true,
-      message: 'Tag added successfully',
-      data: config
-    });
-  } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: 'Failed to add tag',
-      error: error.message
-    });
-  }
-};
-
-// @desc    Remove tag by index
-// @route   DELETE /api/app-config/tags/:index
-// @access  Admin
-exports.removeTag = async (req, res) => {
-  try {
-    const { index } = req.params;
-    
-    const config = await AppConfig.findOne();
-    
-    if (!config) {
-      return res.status(404).json({
-        success: false,
-        message: 'Config not found'
-      });
-    }
-    
-    if (index < 0 || index >= config.tag.length) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid index'
-      });
-    }
-    
-    config.tag.splice(index, 1);
-    await config.save();
-    
-    res.json({
-      success: true,
-      message: 'Tag removed successfully',
-      data: config
-    });
-  } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: 'Failed to remove tag',
       error: error.message
     });
   }
@@ -292,7 +190,6 @@ exports.addViewPager = async (req, res) => {
     if (!config) {
       config = await AppConfig.create({
         ad_text: '',
-        tag: [],
         view_pager: [{ image: imageUrl }]
       });
     } else {

@@ -5,12 +5,6 @@ const appConfigSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
-  tag: [{
-    tags: {
-      type: String,
-      required: true
-    }
-  }],
   view_pager: [{
     image: {
       type: String,
