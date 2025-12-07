@@ -26,7 +26,7 @@ router.route('/:id')
   .put(protect, admin, updateTopup)
   .delete(protect, admin, deleteTopup);
 
-router.get('/user', protect, getTopupsByUser);
+router.get('/user/:userId', protect, getTopupsByUser);
 router.get('/status/:status', protect, admin, getTopupsByStatus);
 router.patch('/:id/approve', protect, admin, approveTopup);
 router.patch('/:id/reject', protect, admin, rejectTopup);

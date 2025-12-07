@@ -31,7 +31,7 @@ exports.getTopupById = async (req, res) => {
 // @route   GET /api/topups/user/:userId
 exports.getTopupsByUser = async (req, res) => {
   try {
-    const topups = await Topup.find({ user: `${req.user._id}` }).populate('user', 'name email');
+    const topups = await Topup.find({ user: req.params.userId }).populate('user', 'name email');
     res.json(topups);
   } catch (error) {
     res.status(500).json({ message: error.message });
