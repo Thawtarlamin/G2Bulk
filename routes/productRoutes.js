@@ -4,6 +4,7 @@ const {
   getAllProducts,
   getProductById,
   getProductByKey,
+  getProductsByTag,
   createProduct,
   updateProduct,
   deleteProduct
@@ -16,6 +17,7 @@ router.route('/')
   .post(protect, admin, upload.single('image'), createProduct);
 
 router.get('/key/:key', getProductByKey);
+router.get('/tag/:tag', getProductsByTag);
 
 router.route('/:id')
   .get(getProductById)

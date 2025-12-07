@@ -1,4 +1,5 @@
 const Product = require('../models/Product');
+const Tag = require('../models/Tag');
 const { uploadBuffer, cloudinary } = require('../utils/cloudinary');
 
 // @desc    Get all products
@@ -91,6 +92,16 @@ exports.createProduct = async (req, res) => {
             });
         }
 
+        // Validate tag exists in database
+        if (tag) {
+            const tagExists = await Tag.findOne({ name: tag, status: 'active' });
+            if (!tagExists) {
+                return res.status(400).json({ 
+                    message: `Tag '${tag}' does not exist or is inactive. Please create the tag first.` 
+                });
+            }
+        }
+
         // Check if product with same game code already exists
         const existingProduct = await Product.findOne({ 'game.code': game.code });
         if (existingProduct) {
@@ -165,8 +176,18 @@ exports.updateProduct = async (req, res) => {
             }));
         }
 
+        // Validate tag exists in database before updating
+        if (tag) {
+            const tagExists = await Tag.findOne({ name: tag, status: 'active' });
+            if (!tagExists) {
+                return res.status(400).json({ 
+                    message: `Tag '${tag}' does not exist or is inactive. Please create the tag first.` 
+                });
+            }
+            product.tag = tag;
+        }
+
         // Update tag and status
-        if (tag) product.tag = tag;
         if (status) product.status = status;
 
         await product.save();
@@ -177,6 +198,41 @@ exports.updateProduct = async (req, res) => {
         });
     } catch (error) {
         res.status(400).json({ message: error.message });
+    }
+};
+
+// @desc    Get products by tag
+// @route   GET /api/products/tag/:tag
+exports.getProductsByTag = async (req, res) => {
+    try {
+        const { tag } = req.params;
+        
+        const products = await Product.find({ 
+            tag: tag,
+            status: 'active' 
+        });
+        
+        // Sort catalogues by amount (low to high)
+        const productsWithSortedCatalogues = products.map(product => {
+            const productObj = product.toObject();
+            
+            if (productObj.catalogues && productObj.catalogues.length > 0) {
+                productObj.catalogues = productObj.catalogues.sort((a, b) => a.amount - b.amount);
+            }
+            
+            return productObj;
+        });
+        
+        res.json({
+            success: true,
+            count: productsWithSortedCatalogues.length,
+            data: productsWithSortedCatalogues
+        });
+    } catch (error) {
+        res.status(500).json({ 
+            success: false,
+            message: error.message 
+        });
     }
 };
 

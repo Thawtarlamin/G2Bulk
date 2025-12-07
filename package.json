@@ -1,7 +1,7 @@
 {
   "name": "sl-gaming-shop",
   "version": "1.0.0",
-  "description": "SL Gaming Shop - Gaming product topup API with 24payseller integration",
+  "description": "SL Gaming Shop",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
