@@ -1,4 +1,5 @@
 const AppConfig = require('../models/AppConfig');
+const Tag = require('../models/Tag');
 const { uploadBuffer, cloudinary } = require('../utils/cloudinary');
 
 // @desc    Get app config (or create default if not exists)
@@ -50,6 +51,21 @@ exports.upsertAppConfig = async (req, res) => {
         success: false,
         message: 'view_pager must be an array'
       });
+    }
+    
+    // Validate tags exist in Tag database
+    if (tag && Array.isArray(tag)) {
+      for (const tagItem of tag) {
+        if (tagItem.tags) {
+          const tagExists = await Tag.findOne({ name: tagItem.tags, status: 'active' });
+          if (!tagExists) {
+            return res.status(400).json({
+              success: false,
+              message: `Tag '${tagItem.tags}' does not exist or is inactive. Please create the tag first.`
+            });
+          }
+        }
+      }
     }
     
     // If files uploaded (multiple images), upload to Cloudinary
@@ -161,6 +177,15 @@ exports.addTag = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'tags is required'
+      });
+    }
+    
+    // Validate tag exists in Tag database
+    const tagExists = await Tag.findOne({ name: tags, status: 'active' });
+    if (!tagExists) {
+      return res.status(400).json({
+        success: false,
+        message: `Tag '${tags}' does not exist or is inactive. Please create the tag first.`
       });
     }
     
