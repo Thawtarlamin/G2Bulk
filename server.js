@@ -80,12 +80,9 @@ app.use('/api/chat', require('./routes/chatRoutes'));
 app.use('/api/app-config', require('./routes/appConfigRoutes'));
 app.use('/api/tags', require('./routes/tagRoutes'));
 app.use('/api/validation', require('./routes/validationRoutes'));
-app.use('/api/stats', require('./routes/statsRoutes'));
 
 // Deep linking route (public, no /api prefix)
 app.use('/', require('./routes/deepLinkRoutes'));
-app.use('/api/tags', require('./routes/tagRoutes'));
-app.use('/api/validation', require('./routes/validationRoutes'));
 
 // Socket.io Authentication Middleware
 io.use(async (socket, next) => {
