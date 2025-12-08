@@ -2,12 +2,18 @@ const User = require('../models/User');
 const { generateToken } = require('../middleware/auth');
 const bcrypt = require('bcryptjs');
 const { getMe: getG2BulkAccount } = require('../utils/g2bulk');
+const passport = require('passport');
 
 // @desc    Register new user
 // @route   POST /api/auth/register
 exports.register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
+
+    // Validate required fields
+    if (!name || !email || !password) {
+      return res.status(400).json({ message: 'Please provide name, email and password' });
+    }
 
     // Check if user exists
     const userExists = await User.findOne({ email });
@@ -23,7 +29,8 @@ exports.register = async (req, res) => {
     const user = await User.create({
       name,
       email,
-      password: hashedPassword
+      password: hashedPassword,
+      authProvider: 'local'
     });
 
     if (user) {
@@ -130,3 +137,37 @@ exports.getG2BulkMe = async (req, res) => {
     });
   }
 };
+
+// @desc    Google OAuth callback
+// @route   GET /api/auth/google/callback
+exports.googleCallback = async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: 'Authentication failed' });
+    }
+
+    const token = generateToken(req.user._id);
+    
+    // Check if request is from mobile app (via query parameter or custom header)
+    const isMobile = req.query.platform === 'mobile' || req.query.mobile === 'true';
+    
+    if (isMobile) {
+      // For Android: Deep link redirect
+      // Format: g2bulk://auth/callback?token=JWT_TOKEN
+      const deepLink = `${process.env.MOBILE_DEEP_LINK_SCHEME || 'g2bulk'}://auth/callback?token=${token}`;
+      return res.redirect(deepLink);
+    }
+    
+    // For web: Redirect to frontend with token
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    res.redirect(`${frontendUrl}/auth/callback?token=${token}`);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Google OAuth login/signup
+// @route   GET /api/auth/google
+exports.googleAuth = passport.authenticate('google', { 
+  scope: ['profile', 'email'] 
+});

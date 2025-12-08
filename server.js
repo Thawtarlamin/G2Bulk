@@ -8,6 +8,8 @@ const connectDB = require('./config/database');
 const jwt = require('jsonwebtoken');
 const User = require('./models/User');
 const cors = require('cors');
+const session = require('express-session');
+const passport = require('./config/passport');
 
 const app = express();
 const server = http.createServer(app);
@@ -24,6 +26,7 @@ app.set('io', io);
 
 // Connect to MongoDB
 connectDB();
+
 // Middleware
 app.use(cors({
   origin: ['http://localhost:5173','http://localhost:5174', 'http://localhost:3000', 'http://localhost:3001','https://sl-game-shop-admin.vercel.app'],
@@ -32,9 +35,23 @@ app.use(cors({
   credentials: true
 }));
 
-
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Session configuration
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
+}));
+
+// Passport middleware
+app.use(passport.initialize());
+app.use(passport.session());
 
 // Global error handler for JSON parsing
 app.use((err, req, res, next) => {
