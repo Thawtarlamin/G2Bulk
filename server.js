@@ -81,9 +81,6 @@ app.use('/api/app-config', require('./routes/appConfigRoutes'));
 app.use('/api/tags', require('./routes/tagRoutes'));
 app.use('/api/validation', require('./routes/validationRoutes'));
 
-// Deep linking route (public, no /api prefix)
-app.use('/', require('./routes/deepLinkRoutes'));
-
 // Socket.io Authentication Middleware
 io.use(async (socket, next) => {
   try {
