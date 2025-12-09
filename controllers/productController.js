@@ -1,6 +1,64 @@
 const Product = require('../models/Product');
 const Tag = require('../models/Tag');
+const Percentage = require('../models/Percentage');
 const { uploadBuffer, cloudinary } = require('../utils/cloudinary');
+const { syncProductFromG2Bulk, syncMultipleProducts } = require('../utils/g2bulkScraper');
+const fs = require('fs');
+const path = require('path');
+
+/**
+ * Get exchange rate from cache
+ */
+function getExchangeRate() {
+  try {
+    const cacheFile = path.join(__dirname, '../cache/exchange-rate.json');
+    if (fs.existsSync(cacheFile)) {
+      const data = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+      if (data.success && data.rate) {
+        return data.rate;
+      }
+    }
+  } catch (error) {
+    console.error('Error reading exchange rate:', error.message);
+  }
+  return null;
+}
+
+/**
+ * Get markup percentage from database
+ */
+async function getMarkupPercentage() {
+  try {
+    const percentageDoc = await Percentage.findOne({ isActive: true });
+    if (percentageDoc && percentageDoc.value) {
+      return percentageDoc.value / 100; // Convert to decimal (e.g., 10 -> 0.10)
+    }
+  } catch (error) {
+    console.error('Error reading percentage:', error.message);
+  }
+  return 0.10; // Default 10% if not found
+}
+
+/**
+ * Apply exchange rate to product catalogues
+ */
+async function applyExchangeRate(product) {
+  const exchangeRate = getExchangeRate();
+  const markupPercentage = await getMarkupPercentage();
+  const productObj = product.toObject ? product.toObject() : product;
+  
+  if (exchangeRate && productObj.catalogues && productObj.catalogues.length > 0) {
+    productObj.catalogues = productObj.catalogues.map(catalogue => ({
+      ...catalogue,
+      amount: Math.round((catalogue.amount * exchangeRate) * (1 + markupPercentage)),
+      profit: Math.round((catalogue.amount * exchangeRate) * markupPercentage),
+      originalKyats: Math.round(catalogue.amount * exchangeRate),
+      originalAmount: catalogue.amount
+    }));
+  }
+  
+  return productObj;
+}
 
 // @desc    Get all products
 // @route   GET /api/products
@@ -8,16 +66,18 @@ exports.getAllProducts = async (req, res) => {
     try {
         const products = await Product.find({ status: 'active' });
         
-        // Sort catalogues by amount (low to high)
-        const productsWithSortedCatalogues = products.map(product => {
-            const productObj = product.toObject();
-            
-            if (productObj.catalogues && productObj.catalogues.length > 0) {
-                productObj.catalogues = productObj.catalogues.sort((a, b) => a.amount - b.amount);
-            }
-            
-            return productObj;
-        });
+        // Sort catalogues by amount (low to high) and apply exchange rate
+        const productsWithSortedCatalogues = await Promise.all(
+            products.map(async (product) => {
+                let productObj = await applyExchangeRate(product);
+                
+                if (productObj.catalogues && productObj.catalogues.length > 0) {
+                    productObj.catalogues = productObj.catalogues.sort((a, b) => a.amount - b.amount);
+                }
+                
+                return productObj;
+            })
+        );
         
         res.json(productsWithSortedCatalogues);
     } catch (error) {
@@ -48,7 +108,7 @@ exports.getProductByKey = async (req, res) => {
             return res.status(404).json({ message: 'Product not found' });
         }
 
-        const productObj = product.toObject();
+        let productObj = await applyExchangeRate(product);
         
         // Sort catalogues by amount (low to high)
         if (productObj.catalogues && productObj.catalogues.length > 0) {
@@ -212,16 +272,18 @@ exports.getProductsByTag = async (req, res) => {
             status: 'active' 
         });
         
-        // Sort catalogues by amount (low to high)
-        const productsWithSortedCatalogues = products.map(product => {
-            const productObj = product.toObject();
-            
-            if (productObj.catalogues && productObj.catalogues.length > 0) {
-                productObj.catalogues = productObj.catalogues.sort((a, b) => a.amount - b.amount);
-            }
-            
-            return productObj;
-        });
+        // Sort catalogues by amount (low to high) and apply exchange rate
+        const productsWithSortedCatalogues = await Promise.all(
+            products.map(async (product) => {
+                let productObj = await applyExchangeRate(product);
+                
+                if (productObj.catalogues && productObj.catalogues.length > 0) {
+                    productObj.catalogues = productObj.catalogues.sort((a, b) => a.amount - b.amount);
+                }
+                
+                return productObj;
+            })
+        );
         
         res.json({
             success: true,
@@ -266,5 +328,66 @@ exports.deleteProduct = async (req, res) => {
         res.json({ message: 'Product deleted successfully' });
     } catch (error) {
         res.status(500).json({ message: error.message });
+    }
+};
+
+// @desc    Sync product from G2Bulk API
+// @route   POST /api/products/sync
+exports.syncFromG2Bulk = async (req, res) => {
+    try {
+        const { gameCode, tag } = req.body;
+        
+        if (!gameCode || !tag) {
+            return res.status(400).json({
+                success: false,
+                message: 'gameCode and tag are required'
+            });
+        }
+        
+        const result = await syncProductFromG2Bulk(gameCode, tag);
+        
+        if (result.success) {
+            return res.json({
+                success: true,
+                message: `Product ${result.action} successfully`,
+                action: result.action,
+                product: result.product
+            });
+        } else {
+            return res.status(400).json(result);
+        }
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
+
+// @desc    Sync multiple products from G2Bulk API
+// @route   POST /api/products/sync-multiple
+exports.syncMultipleFromG2Bulk = async (req, res) => {
+    try {
+        const { games } = req.body;
+        
+        if (!games || !Array.isArray(games) || games.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'games array is required with format: [{gameCode, tag}]'
+            });
+        }
+        
+        const results = await syncMultipleProducts(games);
+        
+        res.json({
+            success: true,
+            message: 'Sync completed',
+            results: results
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
     }
 };

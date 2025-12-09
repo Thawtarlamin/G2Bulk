@@ -7,7 +7,9 @@ const {
   getProductsByTag,
   createProduct,
   updateProduct,
-  deleteProduct
+  deleteProduct,
+  syncFromG2Bulk,
+  syncMultipleFromG2Bulk
 } = require('../controllers/productController');
 const { protect, admin } = require('../middleware/auth');
 const upload = require('../middleware/upload');
@@ -15,6 +17,9 @@ const upload = require('../middleware/upload');
 router.route('/')
   .get(getAllProducts)
   .post(protect, admin, upload.single('image'), createProduct);
+
+router.post('/sync', protect, admin, syncFromG2Bulk);
+router.post('/sync-multiple', protect, admin, syncMultipleFromG2Bulk);
 
 router.get('/key/:key', getProductByKey);
 router.get('/tag/:tag', getProductsByTag);

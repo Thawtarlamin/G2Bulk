@@ -18,7 +18,18 @@ function uploadBuffer(buffer, options = {}) {
   });
 }
 
+// Upload image from URL to Cloudinary
+async function uploadFromUrl(imageUrl, options = {}) {
+  try {
+    const result = await cloudinary.uploader.upload(imageUrl, options);
+    return result;
+  } catch (error) {
+    throw error;
+  }
+}
+
 module.exports = {
   cloudinary,
   uploadBuffer,
+  uploadFromUrl,
 };

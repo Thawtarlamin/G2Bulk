@@ -10,6 +10,7 @@ const User = require('./models/User');
 const cors = require('cors');
 const session = require('express-session');
 const passport = require('./config/passport');
+const { startExchangeRateCron } = require('./utils/exchangeRateCron');
 
 const app = express();
 const server = http.createServer(app);
@@ -80,6 +81,7 @@ app.use('/api/chat', require('./routes/chatRoutes'));
 app.use('/api/app-config', require('./routes/appConfigRoutes'));
 app.use('/api/tags', require('./routes/tagRoutes'));
 app.use('/api/validation', require('./routes/validationRoutes'));
+app.use('/api/percentage', require('./routes/percentageRoutes'));
 
 // Socket.io Authentication Middleware
 io.use(async (socket, next) => {
@@ -241,4 +243,7 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
   console.log(`Socket.io enabled for real-time chat`);
+  
+  // Start exchange rate cron job
+  startExchangeRateCron();
 });
