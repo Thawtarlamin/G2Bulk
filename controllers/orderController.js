@@ -1,7 +1,10 @@
 const Order = require('../models/Order');
 const User = require('../models/User');
 const Product = require('../models/Product');
+const Percentage = require('../models/Percentage');
 const { placeOrder, getOrderStatus: getG2BulkOrderStatus } = require('../utils/g2bulk');
+const fs = require('fs');
+const path = require('path');
 
 // @desc    Get all orders
 // @route   GET /api/orders
@@ -38,7 +41,38 @@ exports.getOrdersByUser = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+/**
+ * Get exchange rate from cache
+ */
+function getExchangeRate() {
+  try {
+    const cacheFile = path.join(__dirname, '../cache/exchange-rate.json');
+    if (fs.existsSync(cacheFile)) {
+      const data = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+      if (data.success && data.rate) {
+        return data.rate;
+      }
+    }
+  } catch (error) {
+    console.error('Error reading exchange rate:', error.message);
+  }
+  return null;
+}
 
+/**
+ * Get markup percentage from database
+ */
+async function getMarkupPercentage() {
+  try {
+    const percentageDoc = await Percentage.findOne({ isActive: true });
+    if (percentageDoc && percentageDoc.value) {
+      return percentageDoc.value / 100; // Convert to decimal (e.g., 10 -> 0.10)
+    }
+  } catch (error) {
+    console.error('Error reading percentage:', error.message);
+  }
+  return 0.10; // Default 10% if not found
+}
 // @desc    Create new order
 // @route   POST /api/orders
 exports.createOrder = async (req, res) => {
@@ -64,7 +98,9 @@ exports.createOrder = async (req, res) => {
       return res.status(404).json({ message: 'Catalogue not found in product' });
     }
 
-    const orderAmount = catalogue.amount;
+    const exchangeRate = getExchangeRate();
+    const markupPercentage = await getMarkupPercentage();
+    const orderAmount = Math.round((catalogue.amount * exchangeRate) * (1 + markupPercentage));
 
     // Check if user has sufficient balance
     if (userExists.balance < orderAmount) {
