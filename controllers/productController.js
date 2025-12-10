@@ -2,7 +2,7 @@ const Product = require('../models/Product');
 const Tag = require('../models/Tag');
 const Percentage = require('../models/Percentage');
 const { uploadBuffer, cloudinary } = require('../utils/cloudinary');
-const { syncProductFromG2Bulk, syncMultipleProducts } = require('../utils/g2bulkScraper');
+const { syncProductFromG2Bulk, syncMultipleProducts, fetchG2BulkGameFields } = require('../utils/g2bulkScraper');
 const fs = require('fs');
 const path = require('path');
 
@@ -384,6 +384,39 @@ exports.syncMultipleFromG2Bulk = async (req, res) => {
             message: 'Sync completed',
             results: results
         });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
+
+// @desc    Get game input fields from G2Bulk API
+// @route   GET /api/products/fields/:gameCode
+exports.getGameFields = async (req, res) => {
+    try {
+        const { gameCode } = req.params;
+        
+        if (!gameCode) {
+            return res.status(400).json({
+                success: false,
+                message: 'gameCode is required'
+            });
+        }
+        
+        const result = await fetchG2BulkGameFields(gameCode);
+        
+        if (result.success) {
+            return res.json({
+                success: true,
+                gameCode: gameCode,
+                fields: result.fields,
+                notes: result.notes
+            });
+        } else {
+            return res.status(400).json(result);
+        }
     } catch (error) {
         res.status(500).json({
             success: false,

@@ -9,7 +9,8 @@ const {
   updateProduct,
   deleteProduct,
   syncFromG2Bulk,
-  syncMultipleFromG2Bulk
+  syncMultipleFromG2Bulk,
+  getGameFields
 } = require('../controllers/productController');
 const { protect, admin } = require('../middleware/auth');
 const upload = require('../middleware/upload');
@@ -20,6 +21,7 @@ router.route('/')
 
 router.post('/sync', protect, admin, syncFromG2Bulk);
 router.post('/sync-multiple', protect, admin, syncMultipleFromG2Bulk);
+router.get('/fields/:gameCode', getGameFields);
 
 router.get('/key/:key', getProductByKey);
 router.get('/tag/:tag', getProductsByTag);

@@ -3,6 +3,37 @@ const Product = require('../models/Product');
 const { uploadFromUrl } = require('./cloudinary');
 
 /**
+ * Fetch game input fields from G2Bulk API
+ * @param {string} gameCode - Game code (e.g., 'mlbb', 'freefire', etc.)
+ * @returns {Promise<Object>} Game input fields data
+ */
+async function fetchG2BulkGameFields(gameCode) {
+  try {
+    const response = await axios.post('https://api.g2bulk.com/v1/games/fields', {
+      game: gameCode
+    });
+    
+    if (response.data && response.data.code === '200') {
+      return {
+        success: true,
+        fields: response.data.info.fields || [],
+        notes: response.data.info.notes || null
+      };
+    }
+    
+    return {
+      success: false,
+      message: 'Failed to fetch game fields'
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+/**
  * Fetch game catalogue from G2Bulk API
  * @param {string} gameCode - Game code (e.g., 'mlbb', 'freefire', etc.)
  * @returns {Promise<Object>} Game catalogue data
@@ -160,6 +191,7 @@ async function syncMultipleProducts(games) {
 }
 
 module.exports = {
+  fetchG2BulkGameFields,
   fetchG2BulkCatalogue,
   syncProductFromG2Bulk,
   syncMultipleProducts
